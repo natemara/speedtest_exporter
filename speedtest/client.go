@@ -84,7 +84,7 @@ func NewClient(configURL string, serversURL string) (*Client, error) {
 	}, nil
 }
 
-func (client *Client) NetworkMetrics() map[string]float64 {
+func (client *Client) NetworkMetrics() (map[string]float64, error) {
 	result := map[string]float64{}
 	tester := tests.NewTester(client.SpeedtestClient, tests.DefaultDLSizes, tests.DefaultULSizes, false, false)
 	downloadMbps := tester.Download(client.Server)
@@ -94,7 +94,7 @@ func (client *Client) NetworkMetrics() map[string]float64 {
 
 	ping, err := client.SpeedtestClient.GetLatency(client.Server, client.SpeedtestClient.GetLatencyURL(client.Server))
 	if err != nil {
-		log.Fatal(err)
+		return result, err
 	}
 
 	log.Infof("Speedtest Latency: %v ms", ping)
@@ -102,5 +102,5 @@ func (client *Client) NetworkMetrics() map[string]float64 {
 	result["upload"] = uploadMbps
 	result["ping"] = ping
 	log.Infof("Speedtest results: %s", result)
-	return result
+	return result, nil
 }
