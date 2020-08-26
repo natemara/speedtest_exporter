@@ -62,7 +62,6 @@ type Exporter struct {
 // NewExporter returns an initialized Exporter.
 func NewExporter(config string, server string, interval time.Duration) (*Exporter, error) {
 	log.Infof("Setup Speedtest client with interval %s", interval)
-	client, err := speedtest.NewClient(config, server)
 	if err != nil {
 		return nil, fmt.Errorf("Can't create the Speedtest client: %s", err)
 	}
@@ -110,6 +109,18 @@ func main() {
 		configURL     = flag.String("speedtest.config-url", "http://c.speedtest.net/speedtest-config.php?x="+uniuri.New(), "Speedtest configuration URL")
 		serverURL     = flag.String("speedtest.server-url", "http://c.speedtest.net/speedtest-servers-static.php?x="+uniuri.New(), "Speedtest server URL")
 		//interval      = flag.Int("interval", 60*time.Second, "Interval for metrics.")
+		ping = prometheus.NewGauge(prometheus.Opts{
+			Namespace: "speedtest",
+			Name: "ping",
+		})
+		download = prometheus.NewGauge(prometheus.Opts{
+			Namespace: "speedtest",
+			Name: "download",
+		})		
+		upload = prometheus.NewGauge(prometheus.Opts{
+			Namespace: "speedtest",
+			Name: "upload",
+		})
 	)
 	flag.Parse()
 
@@ -122,13 +133,33 @@ func main() {
 	log.Infoln("Build context", prom_version.BuildContext())
 
 	interval := 60 * time.Second
-	exporter, err := NewExporter(*configURL, *serverURL, interval)
+	client, err := speedtest.NewClient(config, server)
 	if err != nil {
 		log.Errorf("Can't create exporter : %s", err)
 		os.Exit(1)
 	}
 	log.Infoln("Register exporter")
-	prometheus.MustRegister(exporter)
+	prometheus.MustRegister(ping, upload, download)
+	
+	go func() {
+		for {
+			log.Infof("Speedtest exporter starting")
+	if e.Client == nil {
+		log.Errorf("Speedtest client not configured.")
+		return
+	}
+
+	metrics, err := e.Client.NetworkMetrics()
+		if err != nil {
+			log.Errorf("Failed to gather metrics")
+			continue;
+		}
+	ping.Set(metrics["ping"])
+			download.Set(metrics["download"])
+			upload.Set(metrics["upload"])
+	log.Infof("Speedtest exporter finished")
+		}
+	}()
 
 	http.Handle(*metricsPath, prometheus.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
