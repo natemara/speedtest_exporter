@@ -35,68 +35,6 @@ const (
 	namespace = "speedtest"
 )
 
-var (
-	ping = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "ping"),
-		"Latency (ms)",
-		nil, nil,
-	)
-	download = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "download"),
-		"Download bandwidth (Mbps).",
-		nil, nil,
-	)
-	upload = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "", "upload"),
-		"Upload bandwidth (Mbps).",
-		nil, nil,
-	)
-)
-
-// Exporter collects Speedtest stats from the given server and exports them using
-// the prometheus metrics package.
-type Exporter struct {
-	Client *speedtest.Client
-}
-
-// NewExporter returns an initialized Exporter.
-func NewExporter(config string, server string, interval time.Duration) (*Exporter, error) {
-	log.Infof("Setup Speedtest client with interval %s", interval)
-	if err != nil {
-		return nil, fmt.Errorf("Can't create the Speedtest client: %s", err)
-	}
-
-	log.Debugln("Init exporter")
-	return &Exporter{
-		Client: client,
-	}, nil
-}
-
-// Describe describes all the metrics ever exported by the Speedtest exporter.
-// It implements prometheus.Collector.
-func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- ping
-	ch <- download
-	ch <- upload
-}
-
-// Collect fetches the stats from configured Speedtest location and delivers them
-// as Prometheus metrics.
-// It implements prometheus.Collector.
-func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	log.Infof("Speedtest exporter starting")
-	if e.Client == nil {
-		log.Errorf("Speedtest client not configured.")
-		return
-	}
-
-	metrics := e.Client.NetworkMetrics()
-	ch <- prometheus.MustNewConstMetric(ping, prometheus.GaugeValue, metrics["ping"])
-	ch <- prometheus.MustNewConstMetric(download, prometheus.GaugeValue, metrics["download"])
-	ch <- prometheus.MustNewConstMetric(upload, prometheus.GaugeValue, metrics["upload"])
-	log.Infof("Speedtest exporter finished")
-}
-
 func init() {
 	prometheus.MustRegister(prom_version.NewCollector("speedtest_exporter"))
 }
@@ -109,17 +47,21 @@ func main() {
 		configURL     = flag.String("speedtest.config-url", "http://c.speedtest.net/speedtest-config.php?x="+uniuri.New(), "Speedtest configuration URL")
 		serverURL     = flag.String("speedtest.server-url", "http://c.speedtest.net/speedtest-servers-static.php?x="+uniuri.New(), "Speedtest server URL")
 		//interval      = flag.Int("interval", 60*time.Second, "Interval for metrics.")
-		ping = prometheus.NewGauge(prometheus.Opts{
-			Namespace: "speedtest",
-			Name: "ping",
+
+		ping = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "ping",
+			Help:      "Latency (ms)",
 		})
-		download = prometheus.NewGauge(prometheus.Opts{
-			Namespace: "speedtest",
-			Name: "download",
-		})		
-		upload = prometheus.NewGauge(prometheus.Opts{
-			Namespace: "speedtest",
-			Name: "upload",
+		download = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "download",
+			Help:      "Download bandwidth (Mbps).",
+		})
+		upload = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "upload",
+			Help:      "Upload bandwidth (Mbps).",
 		})
 	)
 	flag.Parse()
@@ -133,31 +75,36 @@ func main() {
 	log.Infoln("Build context", prom_version.BuildContext())
 
 	interval := 60 * time.Second
-	client, err := speedtest.NewClient(config, server)
+
+	client, err := speedtest.NewClient(*configURL, *serverURL)
 	if err != nil {
 		log.Errorf("Can't create exporter : %s", err)
 		os.Exit(1)
 	}
+	if client == nil {
+		log.Errorf("Speedtest client not configured.")
+		os.Exit(1)
+	}
+
 	log.Infoln("Register exporter")
 	prometheus.MustRegister(ping, upload, download)
-	
+
 	go func() {
 		for {
 			log.Infof("Speedtest exporter starting")
-	if e.Client == nil {
-		log.Errorf("Speedtest client not configured.")
-		return
-	}
 
-	metrics, err := e.Client.NetworkMetrics()
-		if err != nil {
-			log.Errorf("Failed to gather metrics")
-			continue;
-		}
-	ping.Set(metrics["ping"])
+			metrics, err := client.NetworkMetrics()
+			if err != nil {
+				log.Errorf("Failed to gather metrics")
+				continue
+			}
+
+			ping.Set(metrics["ping"])
 			download.Set(metrics["download"])
 			upload.Set(metrics["upload"])
-	log.Infof("Speedtest exporter finished")
+			log.Infof("Speedtest exporter finished")
+
+			time.Sleep(interval)
 		}
 	}()
 
